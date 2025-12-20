@@ -2,6 +2,7 @@ import sqlite3
 import os
 
 from sqlite_python import *
+from gui import *
 
 # initial values
 DB_FILE = os.path.join("database", "todos.db")
@@ -13,22 +14,29 @@ if not os.path.exists(os.path.dirname(DB_FILE)):
 try:
     with sqlite3.connect(DB_FILE) as conn:
         print(f"Opened SQLite database with version {sqlite3.sqlite_version} successfully.")
+        # Create cursor
+        cursor = conn.cursor()
+        # Create Tables if database does not have any. First check, then create.
+        # Check for tables
+        table_check = check_tables(cursor, "user")
 
 except sqlite3.OperationalError as e:
     print("Failed to open database:", e)
-
-# Create Tables if database does not have any. First check, then create.
-# Check for tables
-table_check = check_tables(DB_FILE, "user")
 
 # If not there, create tables, and start initial setup
 if not table_check:
     print("\nCreating new tables...")
     create_tables(DB_FILE)
-    # Start setup: Create user, create unfiled project.
-    add_user(DB_FILE)
-    add_project(DB_FILE, project_name="Unfiled", status="NULL")
+    with sqlite3.connect(DB_FILE) as conn:
+        # Create cursor
+        cursor = conn.cursor()
+        # Start setup: Create user, create unfiled project.
+        add_user(cursor=cursor, conn=conn)
+        add_project(cursor=cursor, conn=conn, project_name="Unfiled", status="NULL")
 
 # Show menu
+with sqlite3.connect(DB_FILE) as conn:
+    # Open GUI
+    show_menu(conn)
 
 
