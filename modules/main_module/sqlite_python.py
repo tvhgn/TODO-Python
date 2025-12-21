@@ -5,6 +5,7 @@ from prettytable import PrettyTable
 from InquirerPy import inquirer
 from InquirerPy.base import Choice
 from InquirerPy.separator import Separator
+from InquirerPy.validator import NumberValidator
 
 def create_tables(database_file):
     sql_statements = [ 
@@ -104,22 +105,27 @@ def add_project(cursor, conn, initialize=False):
         project_begin = "NULL"
     else:
         # Get input from user
-        project_name = inquirer.text(message="Enter project description: ")
-        project_end = inquirer.text(message="(Optional) When would you like to finish this project? [YYYY-MM-DD]: ")
+        project_name = inquirer.text(message="Enter project description: ").execute()
+        project_end = inquirer.text(message="(Optional) When would you like to finish this project? [YYYY-MM-DD]: ").execute()
         # Check if default value is needed
         if project_end == "":
             project_end = "NULL"
             
-        status = inquirer.text(message="(Optional) What is the project's current status? [0; default] Not started [1] In progress [2] Finished: ")
-        # Status validation
-        if status == "":
-            status = 0
-        elif int(status) < 3:
+        status = inquirer.text(
+            message="(Optional) What is the project's current status? [0; default] Not started [1] In progress [2] Finished: ",
+            default="0",
+            validate=NumberValidator()
+            ).execute()
+       # Safely convert to int with fallback
+        try:
             status = int(status)
-        else:
-            print("Command was not recognized. Default value will be used.")
+        except ValueError:
+            status = 0  # Default on invalid input
+
+        # Clamp to valid range
+        if status > 2 or status < 0:
             status = 0
-            
+        
         # Determine today's date
         today = datetime.today()
         project_begin = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
@@ -171,10 +177,10 @@ def add_task(cursor, conn):
 
     # Get user input
     while task_name == "":
-        task_name = inquirer.text(message="Enter Task Description: ")
+        task_name = inquirer.text(message="Enter Task Description: ").execute()
 
     # Priority level
-    priority = inquirer.text(message="(Optional) Enter priority [0 (No priority), 1 (low priority), 2 (high priority)]: ")
+    priority = inquirer.text(message="(Optional) Enter priority [0 (No priority), 1 (low priority), 2 (high priority)]: ").execute()
     if priority == "":
         priority = 0
     else:
@@ -185,7 +191,7 @@ def add_task(cursor, conn):
     print("\nListing projects...")
     list_entries(cursor=cursor, table="projects")
     # Ask for project id
-    project_id = inquirer.text(message="(Optional) Give project ID: ")
+    project_id = inquirer.text(message="(Optional) Give project ID: ").execute()
     if project_id == "":
         project_id = 1 # Unfiled ID
     else:
@@ -193,7 +199,7 @@ def add_task(cursor, conn):
 
     # Due date
     while True:
-        raw_end_date = inquirer.text(message="(Optional) When would you like to finish this task? [YYYY-MM-DD]: ")
+        raw_end_date = inquirer.text(message="(Optional) When would you like to finish this task? [YYYY-MM-DD]: ").execute()
         # Validate format and actual calendar date
         try:
             end_date = datetime.strptime(raw_end_date, "%Y-%m-%d")  # checks format + validity
@@ -203,7 +209,7 @@ def add_task(cursor, conn):
             print("Please enter a valid date in the form YYYY-MM-DD (e.g. 2025-12-31), or leave blank.")
 
     # Reward
-    reward = inquirer.text(message="(Optional) How rewarding will this task be? [0] Not much [1] Quite rewarding [2] Very rewarding!: ")
+    reward = inquirer.text(message="(Optional) How rewarding will this task be? [0] Not much [1] Quite rewarding [2] Very rewarding!: ").execute()
     if reward == "":
         reward = 0
     else:
@@ -221,7 +227,6 @@ def add_task(cursor, conn):
 
     # Commit changes
     conn.commit()
-
 
 def list_entries(cursor, table, condition:str="NULL", get_entries:bool=False):
         # Define query depending on condition presence
@@ -292,37 +297,40 @@ def display_and_select(cursor, conn, table, condition:str="NULL"):
         choices.append(choice)
     # Use choices to create checkbox selection menu   
     print(header_description)  # print headers
-    # Add separator
-    choices.insert(0, Separator())
-    checks = inquirer.checkbox(
-        message="Select (at least) one:",
-        choices=choices,
-        mandatory=False
-        ).execute()
+    if len(choices) != 0:
+        checks = inquirer.checkbox(
+            message="Select (at least) one:",
+            choices=choices,
+            mandatory=False
+            ).execute()
+    else:
+        print("No entries available!")
+        checks = None
     
     # Submenu
-    choices = [Choice(value=i, name=opt) for i, opt in enumerate(["Mark as completed", "Delete", "Edit", "Return"])]
+    choices = [Choice(value=str(i), name=opt) for i, opt in enumerate(["Mark as completed", "Delete", "Edit", "Return"])]
     choices.insert(0, Separator()) # add separator
     if checks is not None:
-        select_menu = inquirer.select(
+        submenu_select = inquirer.select(
                 message="",
                 choices=choices,
             ).execute()
     else:
-        select_menu = False
+        submenu_select = False
 
     # Check input and continue
-    if select_menu:
-        match select_menu:
-            case 0: # Mark as completed
+
+    if submenu_select:
+        match str(submenu_select):
+            case "0": # Mark as completed
                 for check in checks:
                     finish_entry(cursor=cursor, table=table, conn=conn, id_num=check)
-            case 1: # Delete
+            case "1": # Delete
                 for check in checks:
                     delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
-            case 2: # Edit
+            case "2": # Edit
                 edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks, headers=headers)   
-            case 3: # Return
+            case "3": # Return
                 pass
 
 def get_entry(cursor, table, id_num=None, col=None):
@@ -362,6 +370,10 @@ def edit_entry(cursor, conn, table, id_list:list, headers):
     # Ask user for input to get new value for chosen field
     new_value = inquirer.text(message="Enter here: ").execute()
     
+    # Add accents if selected field contains date information
+    if "date" in selected_field:
+        selected_field = f"'{selected_field}'"
+    
     # Give all id's in list same updated value
     for id_num in id_list:
         # Define query
@@ -378,9 +390,22 @@ def finish_entry(cursor, conn, table, id_num):
     # Define query
     query = f"""UPDATE {table} SET status = 2 WHERE id = {id_num}"""
     cursor.execute(query)
+    # Depending on table perform different actions
+    if table == "tasks":
+        # Dictionary to define reward value
+        reward_dict = {0: 5, 1: 10, 2: 30} # {reward_value: coin_amount}
+        # Update coins depending on reward
+        reward_value = get_reward(cursor=cursor, id_num=id_num)
+        update_coin_amount(cursor=cursor, conn=conn, reward_value=reward_value)
+        # Print message
+        print(f"Task completed! You have been rewarded {reward_dict[reward_value]} Coins!")
+    else:
+        print("Project completed! Well done.")
+        
     # Commit changes
     conn.commit()
-    print("Task has been marked as finished! Well done.")
+    
+    
         
 def show_inbox(cursor):
     # Define query
@@ -400,5 +425,40 @@ def show_today(cursor):
     
     # Execute statement
     cursor.execute(query)
-            
+
+def add_reward(cursor):
+    pass
+
+def get_reward(cursor, id_num):
+    # Define query
+    query = f"""SELECT reward FROM tasks WHERE id = {id_num}"""
+    cursor.execute(query)
+    reward_value = cursor.fetchone()[0]
+    return reward_value
+
+def get_coin_amount(cursor):
+    # Define query
+    query="""SELECT coins FROM user WHERE id = 1"""
+    # Execute statement
+    cursor.execute(query)
+    # Fetch result
+    coins = cursor.fetchone()[0]
+
+    return coins
+
+def update_coin_amount(cursor, conn, reward_value):
+    # Dictionary to define reward value
+    reward_dict = {0: 5, 1: 10, 2: 30} # {reward_value: coin_amount}
     
+    # Get current amount
+    current_amount = get_coin_amount(cursor)
+    
+    # Calculate new amount
+    new_amount = current_amount + reward_dict[reward_value]
+    
+    # Define query
+    query = f"""UPDATE user SET coins = {new_amount} where id = 1"""
+    # Execute command
+    cursor.execute(query)
+    # Commit changes
+    conn.commit()
