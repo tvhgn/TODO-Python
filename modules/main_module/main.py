@@ -32,7 +32,7 @@ if not table_check:
         cursor = conn.cursor()
         # Start setup: Create user, create unfiled project.
         add_user(cursor=cursor, conn=conn)
-        add_project(cursor=cursor, conn=conn, project_name="Unfiled", status="NULL")
+        add_project(cursor=cursor, conn=conn, initialize=True)
 
 # Show menu
 with sqlite3.connect(DB_FILE) as conn:
