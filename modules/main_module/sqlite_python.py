@@ -7,6 +7,8 @@ from InquirerPy.base import Choice
 from InquirerPy.separator import Separator
 from InquirerPy.validator import NumberValidator
 
+from helpers.effects import strike
+
 def create_tables(database_file):
     sql_statements = [ 
     """CREATE TABLE IF NOT EXISTS projects (
@@ -284,10 +286,16 @@ def display_and_select(cursor, conn, table, condition:str="NULL"):
     header_description = sep.join(h.ljust(col_widths[h]) for h in headers)
     header_description = "    " + header_description
     
+    # Create options using Choice object while adjusting column widths
     choices = []
     for row in results_dict_list:
         # Create name string
         choice_description = sep.join(str(row[h]).ljust(col_widths[h]) for h in headers)
+        if "status" in headers:
+            # If task is finished, strikethrough
+            if row['status'] == 2: 
+                choice_description = strike(choice_description)
+            
         
         # Build Choice object
         choice = Choice(value=row['id'],
@@ -295,6 +303,7 @@ def display_and_select(cursor, conn, table, condition:str="NULL"):
                         enabled=False)
         # Append to choices
         choices.append(choice)
+        
     # Use choices to create checkbox selection menu   
     print(header_description)  # print headers
     if len(choices) != 0:
@@ -307,31 +316,35 @@ def display_and_select(cursor, conn, table, condition:str="NULL"):
         print("No entries available!")
         checks = None
     
-    # Submenu
-    choices = [Choice(value=str(i), name=opt) for i, opt in enumerate(["Mark as completed", "Delete", "Edit", "Return"])]
-    choices.insert(0, Separator()) # add separator
-    if checks is not None:
-        submenu_select = inquirer.select(
-                message="",
-                choices=choices,
-            ).execute()
-    else:
-        submenu_select = False
+    return checks
 
-    # Check input and continue
+def context_menu(cursor, conn, checks, table):
+    if table != "shop":
+        # Submenu
+        choices = [Choice(value=str(i), name=opt) for i, opt in enumerate(["Mark as completed", "Delete", "Edit", "Return"])]
+        choices.insert(0, Separator()) # add separator
+        if checks is not None:
+            submenu_select = inquirer.select(
+                    message="",
+                    choices=choices,
+                ).execute()
+        else:
+            submenu_select = False
 
-    if submenu_select:
-        match str(submenu_select):
-            case "0": # Mark as completed
-                for check in checks:
-                    finish_entry(cursor=cursor, table=table, conn=conn, id_num=check)
-            case "1": # Delete
-                for check in checks:
-                    delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
-            case "2": # Edit
-                edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks, headers=headers)   
-            case "3": # Return
-                pass
+        # Check input and continue
+
+        if submenu_select:
+            match str(submenu_select):
+                case "0": # Mark as completed
+                    for check in checks:
+                        finish_entry(cursor=cursor, table=table, conn=conn, id_num=check)
+                case "1": # Delete
+                    for check in checks:
+                        delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
+                case "2": # Edit
+                    edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
+                case "3": # Return
+                    pass
 
 def get_entry(cursor, table, id_num=None, col=None):
     # Cast id number to integer
@@ -358,7 +371,10 @@ def delete_entry(cursor, conn, table, id_num):
     
     
     
-def edit_entry(cursor, conn, table, id_list:list, headers):
+def edit_entry(cursor, conn, table, id_list:list):
+    # Get headers
+    headers = [col[0] for col in cursor.description]
+    
     # Define options
     choices = [Choice(header) for header in headers if header != "id"] # make id not editable
     choices.insert(0, Separator())
@@ -367,12 +383,24 @@ def edit_entry(cursor, conn, table, id_list:list, headers):
                                   choices=choices).execute()
     
     
+    # If selected field is project_id: list all projects
+    if selected_field == "project_id":
+        list_entries(cursor=cursor, table="projects")
+    
     # Ask user for input to get new value for chosen field
     new_value = inquirer.text(message="Enter here: ").execute()
     
     # Add accents if selected field contains date information
     if "date" in selected_field:
         selected_field = f"'{selected_field}'"
+        
+    if "cost" in selected_field and table=="shop":
+        cost_dict = {"0": 40, "1":80, "2":160}
+        new_value = cost_dict[new_value]
+        
+    if "reward" in selected_field and table == "tasks":
+        reward_dict = {0: 5, 1: 10, 2: 30} # {reward_value: coin_amount}
+        new_value = reward_dict[new_value]
     
     # Give all id's in list same updated value
     for id_num in id_list:
@@ -395,7 +423,7 @@ def finish_entry(cursor, conn, table, id_num):
         # Dictionary to define reward value
         reward_dict = {0: 5, 1: 10, 2: 30} # {reward_value: coin_amount}
         # Update coins depending on reward
-        reward_value = get_reward(cursor=cursor, id_num=id_num)
+        reward_value = get_reward_value(cursor=cursor, id_num=id_num)
         update_coin_amount(cursor=cursor, conn=conn, reward_value=reward_value)
         # Print message
         print(f"Task completed! You have been rewarded {reward_dict[reward_value]} Coins!")
@@ -426,10 +454,56 @@ def show_today(cursor):
     # Execute statement
     cursor.execute(query)
 
-def add_reward(cursor):
-    pass
+def add_reward(cursor, conn):
+    # To build query we need some information
+    reward_dict = {"0": 40, "1":80, "2":160}
+    reward_description = inquirer.text(message="What is the reward? ").execute()
+    reward_cost = inquirer.text(message="How big is the reward? [0; small, 1;medium, 2; big]",
+                                validate=NumberValidator()).execute()
+    # Calculate cost
+    transformed_cost = reward_dict[reward_cost]
+    
+    # Get id number
+    new_id = determine_id(cursor=cursor, table_name="shop")
+        
+    # Execute statement and save changes
+    cursor.execute(
+        """INSERT INTO shop(id, reward, cost) VALUES(?,?,?)""", 
+        (new_id, reward_description, transformed_cost)
+        )
+    conn.commit()
+    
+    
+def buy_reward(cursor, conn, checks):   
+    # Calculate cost based on selection
+    cost_total = 0
+    for check in checks:
+        query = f"""SELECT cost FROM shop WHERE id = {check}"""
+        cursor.execute(query)
+        cost_total += cursor.fetchone()[0]
+    # Get coin balance
+    balance = get_coin_amount(cursor=cursor)
+    
+    # Check if balance is sufficient and act accordingly
+    if balance < cost_total:
+        print(f"Your balance ({balance} Coins) is not sufficient. Complete more tasks!")
+    else:
+        # Ask for confirmation
+        confirm = inquirer.confirm(message=f"This reward costs {cost_total} Coins. Please confirm your purchase [Y/N]:").execute()
+        if confirm:
+            # Deduct balance
+            update_coin_amount(cursor=cursor, conn=conn, reward_value=-cost_total)
+            if len(checks) > 1:
+                # Show new balance and print congratulatory message
+                print(f"Enjoy your rewards! Your new balance is {balance-cost_total} Coins.")
+            else:
+                # Show new balance and print congratulatory message
+                print(f"Enjoy your reward! Your new balance is {balance-cost_total} Coins.")
+            
+            # TODO: store transaction in history
 
-def get_reward(cursor, id_num):
+
+def get_reward_value(cursor, id_num):
     # Define query
     query = f"""SELECT reward FROM tasks WHERE id = {id_num}"""
     cursor.execute(query)

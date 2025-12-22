@@ -16,7 +16,7 @@ def show_menu(conn):
         coins = get_coin_amount(cursor)
         # Show menu options and get selection
         main_select = inquirer.select(
-            message=f"Main Menu\nBalance: {coins} Coins",
+            message=f"\nMain Menu\nBalance: {coins} Coins",
             choices=["Today's Tasks", "Inbox", "Tasks", "Projects", "Users", "Shop","Exit"],
         ).execute()
 
@@ -30,7 +30,9 @@ def show_menu(conn):
                 # Define condition
                 condition = f"end_date = '{today}'"
                 # Fetch entries and guide through submenus
-                display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                # Offer selection based on checked entries
+                context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                             
             # Inbox
             case "Inbox":
@@ -38,7 +40,8 @@ def show_menu(conn):
                 # Define condition
                 condition = "project_id = 1"
                 # Fetch entries and guide through submenus
-                display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                 
             # Tasks Menu
             case "Tasks":
@@ -55,10 +58,12 @@ def show_menu(conn):
                             # Condition
                             condition = "NOT status = 2"
                             # Fetch entries and guide through submenus
-                            display_and_select(cursor=cursor, conn=conn, table="tasks", condition =condition)
+                            checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition =condition)
+                            context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                         case "2": # Show completed tasks
                             condition = "status = 2"
-                            display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                            checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                            context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                         case "3": # Return
                             pass
                             
@@ -76,10 +81,12 @@ def show_menu(conn):
                         case "0":
                             add_project(cursor=cursor, conn=conn, initialize=False)
                         case "1":
-                            display_and_select(cursor=cursor, conn=conn, table="projects")
+                            checks = display_and_select(cursor=cursor, conn=conn, table="projects") # Show entries, format, and offer checkbox selection
+                            context_menu(cursor=cursor, conn=conn, checks=checks, table = "projects") # Offer options based on checked entries
                         case "2":
                             condition = "status = 2"
-                            display_and_select(cursor=cursor, conn=conn, table="projects", condition=condition)
+                            checks = display_and_select(cursor=cursor, conn=conn, table="projects", condition=condition)
+                            context_menu(cursor=cursor, conn=conn, checks=checks, table = "projects")
                         case "3":
                             pass
             
@@ -88,7 +95,7 @@ def show_menu(conn):
             case "Shop":
                 # Define options for shop menu
                 choices = [Choice(value=str(i), name=opt) for i, opt in
-                           enumerate("Add Reward", "Buy Reward", "Edit Reward")]
+                           enumerate(["Add Reward", "Buy Reward", "Edit Reward", "See Available Rewards", "Return"])]
                 # Present menu
                 shop_menu_select = inquirer.select(message="Select action: ",
                                                    choices=choices).execute()
@@ -96,7 +103,18 @@ def show_menu(conn):
                 if shop_menu_select:
                     match shop_menu_select:
                         case "0": # Add reward
+                            add_reward(cursor=cursor, conn=conn)
+                        case "1": # Buy reward
+                            checks = display_and_select(cursor=cursor, conn=conn, table="shop")
+                            buy_reward(cursor=cursor, checks=checks, conn=conn)
+                        case "2": # Edit reward
+                            checks = display_and_select(cursor=cursor, conn=conn, table="shop")
+                            edit_entry(cursor=cursor, conn=conn, table="shop", id_list=checks)
+                        case "3":
+                            list_entries(cursor=cursor, table="shop")
+                        case "3": # Return
                             pass
+                    
                             
             case "Exit":
                 break
