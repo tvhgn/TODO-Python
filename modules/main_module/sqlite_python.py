@@ -1,4 +1,5 @@
 import sqlite3
+import os
 from datetime import datetime
 
 from prettytable import PrettyTable
@@ -6,8 +7,10 @@ from InquirerPy import inquirer
 from InquirerPy.base import Choice
 from InquirerPy.separator import Separator
 from InquirerPy.validator import NumberValidator
+from playsound3 import playsound
 
 from helpers.effects import strike
+from helpers.settings import generate_settings_file, read_settings_file
 
 def create_tables(database_file):
     sql_statements = [ 
@@ -167,6 +170,7 @@ def add_user(cursor, conn):
 
     # Commit changes
     conn.commit()
+    
 
     
 def add_task(cursor, conn):
@@ -176,6 +180,11 @@ def add_task(cursor, conn):
     today = datetime.today()
     begin_date = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
     status = 0 # default status value
+    
+    # Get settings file
+    settings = read_settings_file()
+    # Get reward mapping
+    reward_map = settings['reward_mapping']
 
     # Get user input
     while task_name == "":
@@ -214,8 +223,9 @@ def add_task(cursor, conn):
     reward = inquirer.text(message="(Optional) How rewarding will this task be? [0] Not much [1] Quite rewarding [2] Very rewarding!: ").execute()
     if reward == "":
         reward = 0
-    else:
-        reward = int(reward)
+        
+    # Transform to actual value
+    reward = reward_map[reward]
 
     # Determine next id number
     new_id = determine_id(cursor=cursor, table_name="tasks")
@@ -223,7 +233,7 @@ def add_task(cursor, conn):
     # Execute statement
     cursor.execute("""
         INSERT INTO tasks(id, name, priority, project_id, status, begin_date, end_date, reward) 
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?);
         """, (new_id, task_name, priority, project_id, status, begin_date, end_date, reward))
     print("Task has been added!")
 
@@ -257,12 +267,15 @@ def list_entries(cursor, table, condition:str="NULL", get_entries:bool=False):
     # Otherwise just give the number.
     return total_rows
 
-def display_and_select(cursor, conn, table, condition:str="NULL"):    
-    # Define query depending on condition presence
-    if condition != "NULL":
-        query = f"SELECT * FROM {table} WHERE {condition};"
+def display_and_select(cursor, table, condition:str="NULL", alt_query:str=None):    
+    if alt_query is None:
+        # Define query depending on condition presence
+        if condition != "NULL":
+            query = f"SELECT * FROM {table} WHERE {condition};"
+        else:
+            query = f"""SELECT * FROM {table};"""
     else:
-        query = f"""SELECT * FROM {table};"""
+        query = alt_query
     # Execute query
     cursor.execute(query)
     # Fetch results
@@ -319,7 +332,7 @@ def display_and_select(cursor, conn, table, condition:str="NULL"):
     return checks
 
 def context_menu(cursor, conn, checks, table):
-    if table != "shop":
+    if table != "shop" and table != "projects":
         # Submenu
         choices = [Choice(value=str(i), name=opt) for i, opt in enumerate(["Mark as completed", "Delete", "Edit", "Return"])]
         choices.insert(0, Separator()) # add separator
@@ -330,7 +343,7 @@ def context_menu(cursor, conn, checks, table):
                 ).execute()
         else:
             submenu_select = False
-
+        
         # Check input and continue
 
         if submenu_select:
@@ -345,6 +358,49 @@ def context_menu(cursor, conn, checks, table):
                     edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
                 case "3": # Return
                     pass
+    elif table == "projects":
+        # Submenu
+        choices = [Choice(value=str(i), name=opt) for i, opt in enumerate(["Show Related Tasks", "Mark as completed", "Delete", "Edit", "Return"])]
+        choices.insert(0, Separator()) # add separator
+        if checks is not None:
+            submenu_select = inquirer.select(
+                    message="",
+                    choices=choices,
+                ).execute()
+        else:
+            submenu_select = False
+        
+        # Check input and continue
+
+        if submenu_select:
+            match str(submenu_select):
+                case "0": # Show related tasks
+                    # Show tasks
+                    show_project_tasks(cursor=cursor, conn=conn, check=checks[0])
+                    # Open 
+                case "1": # Mark as completed
+                    for check in checks:
+                        finish_entry(cursor=cursor, table=table, conn=conn, id_num=check)
+                case "2": # Delete
+                    for check in checks:
+                        delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
+                case "3": # Edit
+                    edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
+                case "4": # Return
+                    pass
+
+def show_project_tasks(cursor, conn, check):
+    # Define query
+    query = f"""
+    SELECT tasks.id, tasks.name, tasks.priority, tasks.status, tasks.end_date, tasks.reward 
+    FROM tasks LEFT JOIN projects ON tasks.project_id = projects.id WHERE projects.id = {check};
+    """
+    
+    # Display tasks and offer selection options
+    checks = display_and_select(cursor=cursor, table="projects", alt_query=query)
+    context_menu(cursor=cursor, conn=conn, checks=checks, table="tasks")
+    
+    
 
 def get_entry(cursor, table, id_num=None, col=None):
     # Cast id number to integer
@@ -390,18 +446,25 @@ def edit_entry(cursor, conn, table, id_list:list):
     # Ask user for input to get new value for chosen field
     new_value = inquirer.text(message="Enter here: ").execute()
     
-    # Add accents if selected field contains date information
-    if "date" in selected_field:
-        selected_field = f"'{selected_field}'"
-        
-    if "cost" in selected_field and table=="shop":
-        cost_dict = {"0": 40, "1":80, "2":160}
-        new_value = cost_dict[new_value]
-        
-    if "reward" in selected_field and table == "tasks":
-        reward_dict = {0: 5, 1: 10, 2: 30} # {reward_value: coin_amount}
-        new_value = reward_dict[new_value]
+    # Add apostrophes if date or description text
+    if not new_value.isnumeric():
+        new_value = f"'{new_value}'"
     
+    # Get appropriate values for cost and reward values
+    if "cost" in selected_field and table=="shop":
+        # Get cost mapping from settings
+        settings = read_settings_file()
+        cost_dict = settings['cost_mapping']
+        # Set new value using cost dictionary
+        new_value = cost_dict[new_value]
+    
+    if "reward" in selected_field and table == "tasks":
+        # Get the reward mapping from the settings
+        settings = read_settings_file()
+        reward_dict = settings['reward_mapping'] # {reward_value: coin_amount}
+        # Set the new value
+        new_value = reward_dict[new_value]
+           
     # Give all id's in list same updated value
     for id_num in id_list:
         # Define query
@@ -415,20 +478,25 @@ def edit_entry(cursor, conn, table, id_list:list):
             
         
 def finish_entry(cursor, conn, table, id_num):
+    # Load the settings file
+    settings = read_settings_file()
+    # Dictionary to define reward value, {reward_value: coin_amount}
+    reward_dict = settings['reward_mapping']
     # Define query
     query = f"""UPDATE {table} SET status = 2 WHERE id = {id_num}"""
     cursor.execute(query)
     # Depending on table perform different actions
     if table == "tasks":
-        # Dictionary to define reward value
-        reward_dict = {0: 5, 1: 10, 2: 30} # {reward_value: coin_amount}
         # Update coins depending on reward
-        reward_value = get_reward_value(cursor=cursor, id_num=id_num)
-        update_coin_amount(cursor=cursor, conn=conn, reward_value=reward_value)
+        reward_value = str(get_reward_value(cursor=cursor, id_num=id_num))
+        update_coin_amount(cursor=cursor, conn=conn, increase_amount=int(reward_value))
         # Print message
-        print(f"Task completed! You have been rewarded {reward_dict[reward_value]} Coins!")
+        print(f"Task completed! You have been rewarded {reward_value} Coins!")
     else:
         print("Project completed! Well done.")
+        
+    # Play coin sound
+    playsound(os.path.join("data", "sounds", "coin.mp3"))
         
     # Commit changes
     conn.commit()
@@ -456,12 +524,15 @@ def show_today(cursor):
 
 def add_reward(cursor, conn):
     # To build query we need some information
-    reward_dict = {"0": 40, "1":80, "2":160}
+    # Load the settings file
+    settings = read_settings_file()
+    # Dictionary to define cost value, {reward_value: coin_amount}
+    cost_dict = settings['cost_mapping']
     reward_description = inquirer.text(message="What is the reward? ").execute()
     reward_cost = inquirer.text(message="How big is the reward? [0; small, 1;medium, 2; big]",
                                 validate=NumberValidator()).execute()
     # Calculate cost
-    transformed_cost = reward_dict[reward_cost]
+    transformed_cost = cost_dict[reward_cost]
     
     # Get id number
     new_id = determine_id(cursor=cursor, table_name="shop")
@@ -492,7 +563,7 @@ def buy_reward(cursor, conn, checks):
         confirm = inquirer.confirm(message=f"This reward costs {cost_total} Coins. Please confirm your purchase [Y/N]:").execute()
         if confirm:
             # Deduct balance
-            update_coin_amount(cursor=cursor, conn=conn, reward_value=-cost_total)
+            update_coin_amount(cursor=cursor, conn=conn, increase_amount=-cost_total)
             if len(checks) > 1:
                 # Show new balance and print congratulatory message
                 print(f"Enjoy your rewards! Your new balance is {balance-cost_total} Coins.")
@@ -520,15 +591,12 @@ def get_coin_amount(cursor):
 
     return coins
 
-def update_coin_amount(cursor, conn, reward_value):
-    # Dictionary to define reward value
-    reward_dict = {0: 5, 1: 10, 2: 30} # {reward_value: coin_amount}
-    
+def update_coin_amount(cursor, conn, increase_amount:int):
     # Get current amount
     current_amount = get_coin_amount(cursor)
     
     # Calculate new amount
-    new_amount = current_amount + reward_dict[reward_value]
+    new_amount = current_amount + increase_amount
     
     # Define query
     query = f"""UPDATE user SET coins = {new_amount} where id = 1"""

@@ -1,7 +1,7 @@
 from sqlite_python import *
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from InquirerPy import inquirer
 
@@ -24,13 +24,15 @@ def show_menu(conn):
         match main_select:
             # Today
             case "Today's Tasks":
-                # Get today's date
+                # Get today's date as well as tomorrow's
                 today = datetime.today()
+                tomorrow = today + timedelta(days=1)
                 today = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
+                tomorrow = tomorrow.strftime('%Y-%m-%d')
                 # Define condition
-                condition = f"end_date = '{today}'"
+                condition = f"(end_date = {today}) OR (end_date < '{tomorrow}' AND NOT status = 2)" # Get today's tasks, as well as unfinished tasks from before
                 # Fetch entries and guide through submenus
-                checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                checks = display_and_select(cursor=cursor, table="tasks", condition=condition)
                 # Offer selection based on checked entries
                 context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                             
@@ -40,7 +42,7 @@ def show_menu(conn):
                 # Define condition
                 condition = "project_id = 1"
                 # Fetch entries and guide through submenus
-                checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                checks = display_and_select(cursor=cursor, table="tasks", condition=condition)
                 context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                 
             # Tasks Menu
@@ -58,11 +60,11 @@ def show_menu(conn):
                             # Condition
                             condition = "NOT status = 2"
                             # Fetch entries and guide through submenus
-                            checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition =condition)
+                            checks = display_and_select(cursor=cursor, table="tasks", condition =condition)
                             context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                         case "2": # Show completed tasks
                             condition = "status = 2"
-                            checks = display_and_select(cursor=cursor, conn=conn, table="tasks", condition=condition)
+                            checks = display_and_select(cursor=cursor, table="tasks", condition=condition)
                             context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                         case "3": # Return
                             pass
@@ -78,16 +80,16 @@ def show_menu(conn):
                 # Actions for each option
                 if project_menu_select:
                     match project_menu_select:
-                        case "0":
+                        case "0": # Add project
                             add_project(cursor=cursor, conn=conn, initialize=False)
-                        case "1":
-                            checks = display_and_select(cursor=cursor, conn=conn, table="projects") # Show entries, format, and offer checkbox selection
+                        case "1": # Show all projects
+                            checks = display_and_select(cursor=cursor, table="projects") # Show entries, format, and offer checkbox selection
                             context_menu(cursor=cursor, conn=conn, checks=checks, table = "projects") # Offer options based on checked entries
-                        case "2":
+                        case "2": # Show completed
                             condition = "status = 2"
-                            checks = display_and_select(cursor=cursor, conn=conn, table="projects", condition=condition)
+                            checks = display_and_select(cursor=cursor, table="projects", condition=condition)
                             context_menu(cursor=cursor, conn=conn, checks=checks, table = "projects")
-                        case "3":
+                        case "3": # Return
                             pass
             
             case "Users":
@@ -105,10 +107,10 @@ def show_menu(conn):
                         case "0": # Add reward
                             add_reward(cursor=cursor, conn=conn)
                         case "1": # Buy reward
-                            checks = display_and_select(cursor=cursor, conn=conn, table="shop")
+                            checks = display_and_select(cursor=cursor, table="shop")
                             buy_reward(cursor=cursor, checks=checks, conn=conn)
                         case "2": # Edit reward
-                            checks = display_and_select(cursor=cursor, conn=conn, table="shop")
+                            checks = display_and_select(cursor=cursor, table="shop")
                             edit_entry(cursor=cursor, conn=conn, table="shop", id_list=checks)
                         case "3":
                             list_entries(cursor=cursor, table="shop")

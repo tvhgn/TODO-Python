@@ -3,9 +3,10 @@ import os
 
 from sqlite_python import *
 from gui import *
+from helpers.settings import generate_settings_file
 
 # initial values
-DB_FILE = os.path.join("database", "todos.db")
+DB_FILE = os.path.join("data", "database", "todos.db")
 
 # Create database folder if not there yet
 if not os.path.exists(os.path.dirname(DB_FILE)):
@@ -33,6 +34,8 @@ if not table_check:
         # Start setup: Create user, create unfiled project.
         add_user(cursor=cursor, conn=conn)
         add_project(cursor=cursor, conn=conn, initialize=True)
+        # Generate settings file
+        generate_settings_file()
 
 # Show menu
 with sqlite3.connect(DB_FILE) as conn:
