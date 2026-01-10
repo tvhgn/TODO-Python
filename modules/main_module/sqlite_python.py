@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from prettytable import PrettyTable
 from InquirerPy import inquirer
@@ -511,16 +511,54 @@ def show_inbox(cursor):
     cursor.execute(query)
 
         
-def show_today(cursor):
-    # Get today's date
+def get_today(cursor):
+    # Get today's date as well as tomorrow's
     today = datetime.today()
+    tomorrow = today + timedelta(days=1)
     today = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
-    
-    # Define query
-    query = f"""SELECT * FROM tasks WHERE end_date = {today}"""
+    tomorrow = tomorrow.strftime('%Y-%m-%d')
+    # Define condition
+    condition = f"(end_date = {today}) OR (end_date < '{tomorrow}' AND NOT status = 2)" # Get today's tasks, as well as unfinished tasks from before
+    # Fetch entries and guide through submenus
+    query = f"""SELECT * FROM tasks WHERE {condition}"""
     
     # Execute statement
     cursor.execute(query)
+    
+    # Fetch results
+    results = cursor.fetchall()
+    
+    # Get headers
+    headers = [col[0] for col in cursor.description]
+    
+    # Format entries for inquirer
+    # First create dictionary
+    results_dict_list = [dict(zip(headers, result)) for result in results] # Get structure like {a: 1, b:2, c:3} with letters being columns
+
+    # Compute column widths (consider header and all values)
+    col_widths = {}
+    columns = zip(headers, *results)
+    max_col_lengths = [max(list(map(lambda x:len(str(x)), column))) for column in columns]
+    col_widths = dict(zip(headers, max_col_lengths))
+    
+    # Create headers and adjust for column width
+    sep = "  |  "
+    header_description = sep.join(h.ljust(col_widths[h]) for h in headers)
+    header_description = "    " + header_description
+    
+    # Go through each entry and convert to string
+    entries = []
+    for row in results_dict_list:
+        # Create name string
+        choice_description = sep.join(str(row[h]).ljust(col_widths[h]) for h in headers)
+        # Append to entries
+        entries.append(choice_description)
+    
+    # Build output string
+    output_text = header_description + "\n" + "\n".join(entries)
+    
+    return output_text
+    
 
 def add_reward(cursor, conn):
     # To build query we need some information

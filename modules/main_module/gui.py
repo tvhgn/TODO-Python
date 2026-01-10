@@ -1,27 +1,47 @@
 from sqlite_python import *
+from ai_assistance import *
 
 import os
 from datetime import datetime, timedelta
 
 from InquirerPy import inquirer
 
-#DB_FILE = os.path.join("database", "todos.db")
-
 def show_menu(conn):
     # Create cursor
     cursor = conn.cursor()
     
+    # CLear the screen
+    os.system("clear")
+    
     while True:
+        
         # Get coin amount
         coins = get_coin_amount(cursor)
         # Show menu options and get selection
         main_select = inquirer.select(
             message=f"\nMain Menu\nBalance: {coins} Coins",
-            choices=["Today's Tasks", "Inbox", "Tasks", "Projects", "Users", "Shop","Exit"],
+            choices=["Assistant", "Today's Tasks", "Inbox", "Tasks", "Projects", "Users", "Shop","Exit"],
         ).execute()
 
         # Show submenu's based on selection
         match main_select:
+            case "Assistant":
+                # Create options
+                choices = [Choice(value=str(i), name=opt) for i,opt in enumerate(["Advice for Today", "Task Breakdown"])]
+                assistant_select = inquirer.select(
+                    message=f"Select option",
+                    choices=choices
+                ).execute()
+                
+                # Menu logic
+                if assistant_select:
+                    match assistant_select:
+                        case "0":
+                            # Advice for today
+                            summarize_today(cursor)
+                        case "1":
+                            pass
+                        
             # Today
             case "Today's Tasks":
                 # Get today's date as well as tomorrow's
