@@ -1,8 +1,8 @@
 import os
 
-def continue_prompt():
+def continue_and_clear():
     # Print message and wait for input
-    input("\nPress enter to continue... ")
+    input("\n\nPress enter to continue... ")
     
     # Clear the screen    
     os.system("clear")

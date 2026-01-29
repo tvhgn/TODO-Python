@@ -66,7 +66,7 @@ def show_menu(conn):
                 context_menu(cursor=cursor, conn=conn, checks=checks, table = "tasks")
                 
             # Tasks Menu
-            case "Tasks":
+            case "Tasks":                
                 # Present submenu
                 choices = [Choice(value=str(i), name=opt) for i,opt in enumerate(["Add Task", "Show Pending Tasks", "Show Completed Tasks", "Return"])]
                 task_menu_select = inquirer.select(message="Select action: ",

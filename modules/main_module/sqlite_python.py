@@ -25,12 +25,13 @@ def create_tables(database_file):
     """CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY, 
             name TEXT NOT NULL, 
-            priority INT, 
+            priority INTEGER, 
             project_id INT NOT NULL, 
-            status INT NOT NULL, 
+            status INTEGER NOT NULL, 
             begin_date DATE NOT NULL, 
             end_date DATE NOT NULL, 
             reward INTEGER NOT NULL,
+            duration INTEGER, 
             FOREIGN KEY (project_id) REFERENCES projects (id)
         );""",
     """CREATE TABLE IF NOT EXISTS user (
@@ -42,6 +43,15 @@ def create_tables(database_file):
             id INTEGER PRIMARY KEY, 
             reward TEXT NOT NULL, 
             cost INT NOT NULL
+        );"""
+    """CREATE TABLE IF NOT EXISTS subtasks (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL, 
+            task_id INT NOT NULL, 
+            status INTEGER NOT NULL, 
+            end_date DATE NOT NULL, 
+            duration INTEGER, 
+            FOREIGN KEY (task_id) REFERENCES tasks (id)
         );"""
     ]
 
@@ -226,21 +236,92 @@ def add_task(cursor, conn):
         
     # Transform to actual value
     reward = reward_map[reward]
+    
+    # Duration
+    duration = inquirer.text(message="(Optional) How many minutes do you estimate this task will take?: ").execute()
 
     # Determine next id number
     new_id = determine_id(cursor=cursor, table_name="tasks")
     
     # Execute statement
     cursor.execute("""
-        INSERT INTO tasks(id, name, priority, project_id, status, begin_date, end_date, reward) 
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?);
-        """, (new_id, task_name, priority, project_id, status, begin_date, end_date, reward))
+        INSERT INTO tasks(id, name, priority, project_id, status, begin_date, end_date, reward, duration) 
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (new_id, task_name, priority, project_id, status, begin_date, end_date, reward, duration))
     print("Task has been added!")
 
     # Commit changes
     conn.commit()
 
-def list_entries(cursor, table, condition:str="NULL", get_entries:bool=False):
+def add_subtask(cursor, conn, task_id):
+       
+    # # Initialize values
+    # today = datetime.today()
+    # begin_date = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
+    
+    while True:
+        # More initializations
+        task_name = ""
+        status = 0 # default status value
+        
+        # Get settings file
+        # settings = read_settings_file()
+
+        # Get user input
+        while task_name == "":
+            task_name = inquirer.text(message="Enter Task Description: ").execute()
+
+        # Priority level
+        priority = inquirer.text(message="(Optional) Enter priority [0 (No priority), 1 (low priority), 2 (high priority)]: ").execute()
+        if priority == "":
+            priority = 0
+        else:
+            priority = int(priority)
+
+        
+        # Due date
+        while True:
+            raw_end_date = inquirer.text(message="(Optional) When would you like to finish this task? [YYYY-MM-DD]: ").execute()
+            # Validate format and actual calendar date
+            try:
+                end_date = datetime.strptime(raw_end_date, "%Y-%m-%d")  # checks format + validity
+                end_date = raw_end_date # use raw_end_date if validated
+                break
+            except ValueError:
+                print("Please enter a valid date in the form YYYY-MM-DD (e.g. 2025-12-31), or leave blank.")
+
+        
+        # Duration
+        duration = inquirer.text(message="(Optional) How many minutes do you estimate this task will take?: ").execute()
+
+        # Determine next id number
+        new_id = determine_id(cursor=cursor, table_name="subtasks")
+        
+        # Execute statement
+        cursor.execute("""
+            INSERT INTO subtasks(id, name, task_id, status, end_date, duration) 
+            VALUES(?, ?, ?, ?, ?, ?);
+            """, (new_id, task_name, task_id, status, end_date, duration))
+        print("Subtask has been added!")
+
+        # Commit changes
+        conn.commit()
+        
+        # Ask user if they want to add another subtask
+        add_another = inquirer.confirm(message="Would you like to add another subtask? ").execute()
+        # Break loop if not
+        if not add_another:
+            break
+            
+def check_subtasks(cursor, task_id):
+    # Get subtasks corresponding to task_id
+    query = f"""SELECT * FROM subtasks WHERE task_id = {task_id}"""
+    cursor.execute(query)
+    results = cursor.fetchall() # Get the results and store
+    # Check whether there are any subtasks related to task_id and return True if so
+    return len(results) > 0
+
+def list_entries(cursor, table, condition:str="NULL", get_entries:bool=False, print_table:bool=True):
         # Define query depending on condition presence
     if condition != "NULL":
         query = f"SELECT * FROM {table} WHERE {condition};"
@@ -259,11 +340,13 @@ def list_entries(cursor, table, condition:str="NULL", get_entries:bool=False):
     table = PrettyTable()
     table.field_names = headers
     table.add_rows(results)
-    print(table)
+    
+    if print_table:
+        print(table)
         
     # If data is desired return the results
     if get_entries:
-        return results
+        return (table, results)
     # Otherwise just give the number.
     return total_rows
 
@@ -332,9 +415,20 @@ def display_and_select(cursor, table, condition:str="NULL", alt_query:str=None):
     return checks
 
 def context_menu(cursor, conn, checks, table):
-    if table != "shop" and table != "projects":
+    if table == "tasks":
+        # INitialize
+        has_subtasks = False
+        # If one task selected, check for subtasks
+        if len(checks) == 1:
+            has_subtasks = check_subtasks(cursor=cursor, task_id=checks[0])
+            
         # Submenu
-        choices = [Choice(value=str(i), name=opt) for i, opt in enumerate(["Mark as completed", "Delete", "Edit", "Return"])]
+        if has_subtasks:
+            choices = [Choice(value=str(i), name=opt) for i, opt in 
+                       enumerate(["Mark as completed", "Show Subtasks", "Add Subtask(s)" ,"Delete", "Edit", "Return"])]
+        else:
+            choices = [Choice(value=str(i), name=opt) for i, opt in 
+                       enumerate(["Mark as completed", "Add Subtask(s)" ,"Delete", "Edit", "Return"])]
         choices.insert(0, Separator()) # add separator
         if checks is not None:
             submenu_select = inquirer.select(
@@ -347,17 +441,64 @@ def context_menu(cursor, conn, checks, table):
         # Check input and continue
 
         if submenu_select:
+            if has_subtasks:
+                match str(submenu_select):
+                    case "0": # Mark as completed
+                        for check in checks:
+                            finish_entry(cursor=cursor, table=table, conn=conn, id_num=check)
+                    case "1": # Show subtasks
+                        show_subtasks(cursor=cursor, conn=conn, task_id=checks[0])
+                    case "2": # add subtasks
+                        add_subtask(cursor=cursor, conn=conn, task_id=checks[0])
+                    case "3": # Delete
+                        for check in checks:
+                            delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
+                    case "4": # Edit
+                        edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
+                    case "5": # Return
+                        pass
+            else:
+                match str(submenu_select):
+                    case "0": # Mark as completed
+                        for check in checks:
+                            finish_entry(cursor=cursor, table=table, conn=conn, id_num=check)
+                    case "1": # add subtasks
+                        for check in checks:
+                            add_subtask(cursor=cursor, conn=conn, task_id=check)
+                    case "2": # Delete
+                        for check in checks:
+                            delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
+                    case "3": # Edit
+                        edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
+                    case "4": # Return
+                        pass
+    
+    elif table == "subtasks":
+        choices = [Choice(value=str(i), name=opt) for i, opt in 
+                       enumerate(["Mark as completed", "Delete", "Edit", "Return"])]
+        choices.insert(0, Separator()) # add separator
+        if checks is not None:
+            submenu_select = inquirer.select(
+                    message="",
+                    choices=choices,
+                ).execute()
+        else:
+            submenu_select = False
+        
+        # If selection has been made
+        if submenu_select:
             match str(submenu_select):
-                case "0": # Mark as completed
+                case "0": # mark as completed
                     for check in checks:
                         finish_entry(cursor=cursor, table=table, conn=conn, id_num=check)
                 case "1": # Delete
-                    for check in checks:
-                        delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
+                        for check in checks:
+                            delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
                 case "2": # Edit
                     edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
                 case "3": # Return
-                    pass
+                    pass    
+    
     elif table == "projects":
         # Submenu
         choices = [Choice(value=str(i), name=opt) for i, opt in enumerate(["Show Related Tasks", "Mark as completed", "Delete", "Edit", "Return"])]
@@ -400,7 +541,10 @@ def show_project_tasks(cursor, conn, check):
     checks = display_and_select(cursor=cursor, table="projects", alt_query=query)
     context_menu(cursor=cursor, conn=conn, checks=checks, table="tasks")
     
-    
+def show_subtasks(cursor, conn, task_id):
+    condition = f"""task_id = {task_id}"""
+    checks = display_and_select(cursor=cursor, table="subtasks", condition=condition)
+    context_menu(cursor = cursor, conn=conn, checks=checks, table="subtasks")
 
 def get_entry(cursor, table, id_num=None, col=None):
     # Cast id number to integer
@@ -492,8 +636,10 @@ def finish_entry(cursor, conn, table, id_num):
         update_coin_amount(cursor=cursor, conn=conn, increase_amount=int(reward_value))
         # Print message
         print(f"Task completed! You have been rewarded {reward_value} Coins!")
-    else:
+    elif table == "projects":
         print("Project completed! Well done.")
+    elif table == "subtasks":
+        print("Subtask completed! Well done.")
         
     # Play coin sound
     playsound(os.path.join("data", "sounds", "coin.mp3"))
