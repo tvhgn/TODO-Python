@@ -12,7 +12,17 @@ from playsound3 import playsound
 from helpers.effects import strike
 from helpers.settings import generate_settings_file, read_settings_file
 
+# ==========================================
+# DATABASE INITIALIZATION & LOW-LEVEL HELPERS
+# ==========================================
+
 def create_tables(database_file):
+    """
+    Initializes the database schema by creating necessary tables if they do not exist.
+    
+    Args:
+        database_file (str): The path to the SQLite database file.
+    """
     sql_statements = [ 
     """CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY, 
@@ -43,7 +53,7 @@ def create_tables(database_file):
             id INTEGER PRIMARY KEY, 
             reward TEXT NOT NULL, 
             cost INT NOT NULL
-        );"""
+        );""",
     """CREATE TABLE IF NOT EXISTS subtasks (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL, 
@@ -73,7 +83,17 @@ def create_tables(database_file):
         print("Failed to create tables:", e)
 
 
-def check_tables(cursor, table:str):
+def check_tables(cursor, table: str):
+    """
+    Checks if a specific table contains any data.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        table (str): The name of the table to check.
+        
+    Returns:
+        bool: True if the table has data, False otherwise.
+    """
     try:
         cursor.execute(f"""
             SELECT EXISTS(SELECT * FROM {table})
@@ -87,9 +107,19 @@ def check_tables(cursor, table:str):
 
     return bool(result)
 
-def get_latest_value(cursor, table_name, column_name):
-    
 
+def get_latest_value(cursor, table_name, column_name):
+    """
+    Retrieves the most recent value from a specific column based on the ID.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        table_name (str): Name of the table.
+        column_name (str): Name of the column.
+        
+    Returns:
+        Any: The value found in the latest row.
+    """
     # Get last value in specific column
     cursor.execute(f"""
         SELECT {column_name} 
@@ -100,9 +130,18 @@ def get_latest_value(cursor, table_name, column_name):
     last_value = cursor.fetchone()[0] # Get latest id
     return last_value
 
-    
 
 def determine_id(cursor, table_name):
+    """
+    Calculates the next available ID for a new entry in a table.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        table_name (str): Name of the table.
+        
+    Returns:
+        int: The next ID number.
+    """
     # Check if it has entries
     if check_tables(cursor=cursor, table=table_name):
         last_id = get_latest_value(cursor=cursor, table_name=table_name, column_name="id")
@@ -112,7 +151,20 @@ def determine_id(cursor, table_name):
 
     return new_id
 
+
+# ==========================================
+# ENTITY MANAGEMENT (CRUD OPERATIONS)
+# ==========================================
+
 def add_project(cursor, conn, initialize=False):
+    """
+    Adds a new project to the database via user input or initialization.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        initialize (bool): If True, creates a default "Unfiled" project.
+    """
     if initialize:
         project_name = "Unfiled"
         project_end = "NULL"
@@ -156,10 +208,16 @@ def add_project(cursor, conn, initialize=False):
     conn.commit()
     # Print message
     print(f"Project '{project_name}' has been created!")
-            
+
 
 def add_user(cursor, conn):
+    """
+    Prompts for a name and adds a new user to the database.
     
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+    """
     # Initialize values
     user_name = ""
     coins = 0
@@ -180,11 +238,16 @@ def add_user(cursor, conn):
 
     # Commit changes
     conn.commit()
-    
 
-    
+
 def add_task(cursor, conn):
+    """
+    Prompts for task details and saves a new task to the database.
     
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+    """
     # Initialize values
     task_name = ""
     today = datetime.today()
@@ -253,20 +316,21 @@ def add_task(cursor, conn):
     # Commit changes
     conn.commit()
 
+
 def add_subtask(cursor, conn, task_id):
-       
-    # # Initialize values
-    # today = datetime.today()
-    # begin_date = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
+    """
+    Adds one or more subtasks linked to a specific parent task.
     
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        task_id (int): The ID of the parent task.
+    """
     while True:
         # More initializations
         task_name = ""
         status = 0 # default status value
         
-        # Get settings file
-        # settings = read_settings_file()
-
         # Get user input
         while task_name == "":
             task_name = inquirer.text(message="Enter Task Description: ").execute()
@@ -277,7 +341,6 @@ def add_subtask(cursor, conn, task_id):
             priority = 0
         else:
             priority = int(priority)
-
         
         # Due date
         while True:
@@ -289,7 +352,6 @@ def add_subtask(cursor, conn, task_id):
                 break
             except ValueError:
                 print("Please enter a valid date in the form YYYY-MM-DD (e.g. 2025-12-31), or leave blank.")
-
         
         # Duration
         duration = inquirer.text(message="(Optional) How many minutes do you estimate this task will take?: ").execute()
@@ -312,8 +374,23 @@ def add_subtask(cursor, conn, task_id):
         # Break loop if not
         if not add_another:
             break
-            
+
+
+# ==========================================
+# DATA RETRIEVAL & DISPLAY
+# ==========================================
+
 def check_subtasks(cursor, task_id):
+    """
+    Checks if a task has any associated subtasks.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        task_id (int): The task ID to check.
+        
+    Returns:
+        bool: True if subtasks exist, False otherwise.
+    """
     # Get subtasks corresponding to task_id
     query = f"""SELECT * FROM subtasks WHERE task_id = {task_id}"""
     cursor.execute(query)
@@ -321,8 +398,22 @@ def check_subtasks(cursor, task_id):
     # Check whether there are any subtasks related to task_id and return True if so
     return len(results) > 0
 
-def list_entries(cursor, table, condition:str="NULL", get_entries:bool=False, print_table:bool=True):
-        # Define query depending on condition presence
+
+def list_entries(cursor, table, condition: str = "NULL", get_entries: bool = False, print_table: bool = True):
+    """
+    Lists and optionally returns entries from a database table.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        table (str): Table name.
+        condition (str): SQL WHERE clause condition.
+        get_entries (bool): Whether to return the results.
+        print_table (bool): Whether to print the table to console.
+        
+    Returns:
+        int or tuple: Row count or (PrettyTable, results) depending on get_entries.
+    """
+    # Define query depending on condition presence
     if condition != "NULL":
         query = f"SELECT * FROM {table} WHERE {condition};"
     else:
@@ -337,20 +428,33 @@ def list_entries(cursor, table, condition:str="NULL", get_entries:bool=False, pr
     headers = [col[0] for col in cursor.description]
     
     # Using prettytables
-    table = PrettyTable()
-    table.field_names = headers
-    table.add_rows(results)
+    table_obj = PrettyTable()
+    table_obj.field_names = headers
+    table_obj.add_rows(results)
     
     if print_table:
-        print(table)
+        print(table_obj)
         
     # If data is desired return the results
     if get_entries:
-        return (table, results)
+        return (table_obj, results)
     # Otherwise just give the number.
     return total_rows
 
-def display_and_select(cursor, table, condition:str="NULL", alt_query:str=None):    
+
+def display_and_select(cursor, table, condition: str = "NULL", alt_query: str = None):    
+    """
+    Displays records in a formatted list and allows user to select them via checkboxes.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        table (str): Table name.
+        condition (str): Optional filter.
+        alt_query (str): Optional full SQL query to override default behavior.
+        
+    Returns:
+        list: Selected IDs or None if no entries exist.
+    """
     if alt_query is None:
         # Define query depending on condition presence
         if condition != "NULL":
@@ -392,7 +496,6 @@ def display_and_select(cursor, table, condition:str="NULL", alt_query:str=None):
             if row['status'] == 2: 
                 choice_description = strike(choice_description)
             
-        
         # Build Choice object
         choice = Choice(value=row['id'],
                         name = choice_description,
@@ -414,7 +517,121 @@ def display_and_select(cursor, table, condition:str="NULL", alt_query:str=None):
     
     return checks
 
+
+def get_entry(cursor, table, id_num=None, col=None):
+    """
+    Fetches a specific row or column value from a table by ID.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        table (str): Table name.
+        id_num (int/str): The ID of the record.
+        col (str): Specific column name to fetch.
+        
+    Returns:
+        tuple or Any: The fetched row or value.
+    """
+    # Cast id number to integer
+    id_num = int(id_num)
+        
+    # Define query
+    if col is None: # When no specific column has been specified
+        query = f"""SELECT * FROM {table} WHERE id = {id_num}"""
+    else:
+        query = f"""SELECT {col} FROM {table} WHERE id = {id_num}"""
+    # Execute statement
+    cursor.execute(query)
+    # Fetch results
+    result = cursor.fetchone()
+    return result
+
+
+def get_today(cursor):
+    """
+    Retrieves and formats a string of tasks due today or overdue.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        
+    Returns:
+        str: Formatted text for display.
+    """
+    # Get today's date as well as tomorrow's
+    today = datetime.today()
+    tomorrow = today + timedelta(days=1)
+    today = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
+    tomorrow = tomorrow.strftime('%Y-%m-%d')
+    # Define condition
+    condition = f"(end_date = {today}) OR (end_date < '{tomorrow}' AND NOT status = 2)" # Get today's tasks, as well as unfinished tasks from before
+    # Fetch entries and guide through submenus
+    query = f"""SELECT * FROM tasks WHERE {condition}"""
+    
+    # Execute statement
+    cursor.execute(query)
+    
+    # Fetch results
+    results = cursor.fetchall()
+    
+    # Get headers
+    headers = [col[0] for col in cursor.description]
+    
+    # Format entries for inquirer
+    # First create dictionary
+    results_dict_list = [dict(zip(headers, result)) for result in results] # Get structure like {a: 1, b:2, c:3} with letters being columns
+
+    # Compute column widths (consider header and all values)
+    col_widths = {}
+    columns = zip(headers, *results)
+    max_col_lengths = [max(list(map(lambda x:len(str(x)), column))) for column in columns]
+    col_widths = dict(zip(headers, max_col_lengths))
+    
+    # Create headers and adjust for column width
+    sep = "  |  "
+    header_description = sep.join(h.ljust(col_widths[h]) for h in headers)
+    header_description = "    " + header_description
+    
+    # Go through each entry and convert to string
+    entries = []
+    for row in results_dict_list:
+        # Create name string
+        choice_description = sep.join(str(row[h]).ljust(col_widths[h]) for h in headers)
+        # Append to entries
+        entries.append(choice_description)
+    
+    # Build output string
+    output_text = header_description + "\n" + "\n".join(entries)
+    
+    return output_text
+
+
+def show_inbox(cursor):
+    """
+    Executes a query to show tasks in the default project (Inbox).
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+    """
+    # Define query
+    query = """SELECT * FROM tasks WHERE project_id = 1"""
+   
+    # Execute statement
+    cursor.execute(query)
+
+
+# ==========================================
+# INTERACTION & CONTEXT MENUS
+# ==========================================
+
 def context_menu(cursor, conn, checks, table):
+    """
+    Displays a context-specific menu based on the selected items and table.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        checks (list): List of selected IDs.
+        table (str): The table the IDs belong to.
+    """
     if table == "tasks":
         # INitialize
         has_subtasks = False
@@ -530,7 +747,16 @@ def context_menu(cursor, conn, checks, table):
                 case "4": # Return
                     pass
 
+
 def show_project_tasks(cursor, conn, check):
+    """
+    Displays all tasks associated with a specific project.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        check (int): The project ID.
+    """
     # Define query
     query = f"""
     SELECT tasks.id, tasks.name, tasks.priority, tasks.status, tasks.end_date, tasks.reward 
@@ -540,38 +766,54 @@ def show_project_tasks(cursor, conn, check):
     # Display tasks and offer selection options
     checks = display_and_select(cursor=cursor, table="projects", alt_query=query)
     context_menu(cursor=cursor, conn=conn, checks=checks, table="tasks")
-    
+
+
 def show_subtasks(cursor, conn, task_id):
+    """
+    Displays all subtasks associated with a specific task.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        task_id (int): The parent task ID.
+    """
     condition = f"""task_id = {task_id}"""
     checks = display_and_select(cursor=cursor, table="subtasks", condition=condition)
     context_menu(cursor = cursor, conn=conn, checks=checks, table="subtasks")
 
-def get_entry(cursor, table, id_num=None, col=None):
-    # Cast id number to integer
-    id_num = int(id_num)
-        
-    # Define query
-    if col is None: # When no specific column has been specified
-        query = f"""SELECT * FROM {table} WHERE id = {id_num}"""
-    else:
-        query = f"""SELECT {col} FROM {table} WHERE id = {id_num}"""
-    # Execute statement
-    cursor.execute(query)
-    # Fetch results
-    result = cursor.fetchone()
-    return result
+
+# ==========================================
+# UPDATE & DELETION LOGIC
+# ==========================================
 
 def delete_entry(cursor, conn, table, id_num):
+    """
+    Deletes a specific record from a table.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        table (str): Table name.
+        id_num (int): The ID to delete.
+    """
     # Define query
     query = f"DELETE FROM {table} WHERE id = {id_num}"
     # Execute statement
     cursor.execute(query)
     # Commit changes
     conn.commit()
+
+
+def edit_entry(cursor, conn, table, id_list: list):
+    """
+    Prompts for a field and new value to update multiple records.
     
-    
-    
-def edit_entry(cursor, conn, table, id_list:list):
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        table (str): Table name.
+        id_list (list): List of IDs to update.
+    """
     # Get headers
     headers = [col[0] for col in cursor.description]
     
@@ -581,7 +823,6 @@ def edit_entry(cursor, conn, table, id_list:list):
     # Present selection menu
     selected_field = inquirer.select(message="Select field to edit:",
                                   choices=choices).execute()
-    
     
     # If selected field is project_id: list all projects
     if selected_field == "project_id":
@@ -619,9 +860,18 @@ def edit_entry(cursor, conn, table, id_list:list):
     
     # Commit changes
     conn.commit()
-            
-        
+
+
 def finish_entry(cursor, conn, table, id_num):
+    """
+    Marks an entry as completed (status 2) and handles rewards/coins.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        table (str): Table name.
+        id_num (int): The ID to mark as finished.
+    """
     # Load the settings file
     settings = read_settings_file()
     # Dictionary to define reward value, {reward_value: coin_amount}
@@ -646,67 +896,20 @@ def finish_entry(cursor, conn, table, id_num):
         
     # Commit changes
     conn.commit()
-    
-    
-        
-def show_inbox(cursor):
-    # Define query
-    query = """SELECT * FROM tasks WHERE project_id = 1"""
-   
-    # Execute statement
-    cursor.execute(query)
 
-        
-def get_today(cursor):
-    # Get today's date as well as tomorrow's
-    today = datetime.today()
-    tomorrow = today + timedelta(days=1)
-    today = today.strftime('%Y-%m-%d') # Format to YYYY-mm-dd
-    tomorrow = tomorrow.strftime('%Y-%m-%d')
-    # Define condition
-    condition = f"(end_date = {today}) OR (end_date < '{tomorrow}' AND NOT status = 2)" # Get today's tasks, as well as unfinished tasks from before
-    # Fetch entries and guide through submenus
-    query = f"""SELECT * FROM tasks WHERE {condition}"""
-    
-    # Execute statement
-    cursor.execute(query)
-    
-    # Fetch results
-    results = cursor.fetchall()
-    
-    # Get headers
-    headers = [col[0] for col in cursor.description]
-    
-    # Format entries for inquirer
-    # First create dictionary
-    results_dict_list = [dict(zip(headers, result)) for result in results] # Get structure like {a: 1, b:2, c:3} with letters being columns
 
-    # Compute column widths (consider header and all values)
-    col_widths = {}
-    columns = zip(headers, *results)
-    max_col_lengths = [max(list(map(lambda x:len(str(x)), column))) for column in columns]
-    col_widths = dict(zip(headers, max_col_lengths))
-    
-    # Create headers and adjust for column width
-    sep = "  |  "
-    header_description = sep.join(h.ljust(col_widths[h]) for h in headers)
-    header_description = "    " + header_description
-    
-    # Go through each entry and convert to string
-    entries = []
-    for row in results_dict_list:
-        # Create name string
-        choice_description = sep.join(str(row[h]).ljust(col_widths[h]) for h in headers)
-        # Append to entries
-        entries.append(choice_description)
-    
-    # Build output string
-    output_text = header_description + "\n" + "\n".join(entries)
-    
-    return output_text
-    
+# ==========================================
+# ECONOMY & REWARDS
+# ==========================================
 
 def add_reward(cursor, conn):
+    """
+    Adds a new purchasable reward to the shop.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+    """
     # To build query we need some information
     # Load the settings file
     settings = read_settings_file()
@@ -727,9 +930,17 @@ def add_reward(cursor, conn):
         (new_id, reward_description, transformed_cost)
         )
     conn.commit()
-    
-    
+
+
 def buy_reward(cursor, conn, checks):   
+    """
+    Handles the purchase of shop rewards using user coins.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        checks (list): List of reward IDs to purchase.
+    """
     # Calculate cost based on selection
     cost_total = 0
     for check in checks:
@@ -759,13 +970,33 @@ def buy_reward(cursor, conn, checks):
 
 
 def get_reward_value(cursor, id_num):
+    """
+    Retrieves the reward coin value for a specific task.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        id_num (int): The task ID.
+        
+    Returns:
+        int: The reward value.
+    """
     # Define query
     query = f"""SELECT reward FROM tasks WHERE id = {id_num}"""
     cursor.execute(query)
     reward_value = cursor.fetchone()[0]
     return reward_value
 
+
 def get_coin_amount(cursor):
+    """
+    Retrieves the current coin balance for the user.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        
+    Returns:
+        int: Total coins.
+    """
     # Define query
     query="""SELECT coins FROM user WHERE id = 1"""
     # Execute statement
@@ -775,7 +1006,16 @@ def get_coin_amount(cursor):
 
     return coins
 
-def update_coin_amount(cursor, conn, increase_amount:int):
+
+def update_coin_amount(cursor, conn, increase_amount: int):
+    """
+    Updates the user's coin balance.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        conn (sqlite3.Connection): The database connection.
+        increase_amount (int): Amount to add (use negative for deduction).
+    """
     # Get current amount
     current_amount = get_coin_amount(cursor)
     
