@@ -166,3 +166,4 @@ cython_debug/
 *.db
 modules/main_module/test.ipynb
 data/settings/settings.json
+modules/main_module/sqlite_python copy.py

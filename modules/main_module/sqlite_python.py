@@ -11,6 +11,10 @@ from playsound3 import playsound
 
 from helpers.effects import strike
 from helpers.settings import generate_settings_file, read_settings_file
+from timers import Timer, TimerWindow
+
+# Global variable declaration
+timer_list = []
 
 # ==========================================
 # DATABASE INITIALIZATION & LOW-LEVEL HELPERS
@@ -42,6 +46,7 @@ def create_tables(database_file):
             end_date DATE NOT NULL, 
             reward INTEGER NOT NULL,
             duration INTEGER, 
+            time_spent INTEGER,
             FOREIGN KEY (project_id) REFERENCES projects (id)
         );""",
     """CREATE TABLE IF NOT EXISTS user (
@@ -60,7 +65,8 @@ def create_tables(database_file):
             task_id INT NOT NULL, 
             status INTEGER NOT NULL, 
             end_date DATE NOT NULL, 
-            duration INTEGER, 
+            duration INTEGER,
+            time_spent INTEGER,
             FOREIGN KEY (task_id) REFERENCES tasks (id)
         );"""
     ]
@@ -635,17 +641,20 @@ def context_menu(cursor, conn, checks, table):
     if table == "tasks":
         # INitialize
         has_subtasks = False
-        # If one task selected, check for subtasks
-        if len(checks) == 1:
-            has_subtasks = check_subtasks(cursor=cursor, task_id=checks[0])
+        # If one task selected, check for subtasks. Try except statement to get around situation where checks == None
+        try:
+            if len(checks) == 1:
+                has_subtasks = check_subtasks(cursor=cursor, task_id=checks[0])
+        except TypeError:
+            pass
             
         # Submenu
         if has_subtasks:
             choices = [Choice(value=str(i), name=opt) for i, opt in 
-                       enumerate(["Mark as completed", "Show Subtasks", "Add Subtask(s)" ,"Delete", "Edit", "Return"])]
+                       enumerate(["Mark as completed", "Show Subtasks", "Add Subtask(s)" ,"Delete", "Edit", "Timer", "Return"])]
         else:
             choices = [Choice(value=str(i), name=opt) for i, opt in 
-                       enumerate(["Mark as completed", "Add Subtask(s)" ,"Delete", "Edit", "Return"])]
+                       enumerate(["Mark as completed", "Add Subtask(s)" ,"Delete", "Edit", "Timer", "Return"])]
         choices.insert(0, Separator()) # add separator
         if checks is not None:
             submenu_select = inquirer.select(
@@ -672,7 +681,12 @@ def context_menu(cursor, conn, checks, table):
                             delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
                     case "4": # Edit
                         edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
-                    case "5": # Return
+                    case "5": # Timer
+                        # Popup timer
+                        popup_timer(cursor=cursor, conn=conn, checks=checks)
+                        #timer_context_menu(cursor=cursor, conn=conn, checks=checks)
+                        
+                    case "6": # Return
                         pass
             else:
                 match str(submenu_select):
@@ -686,8 +700,12 @@ def context_menu(cursor, conn, checks, table):
                         for check in checks:
                             delete_entry(cursor=cursor, conn=conn, table=table, id_num=check)
                     case "3": # Edit
-                        edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
-                    case "4": # Return
+                        edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)
+                    case "4": # Timer
+                        # Popup timer
+                        popup_timer(cursor=cursor, conn=conn, checks=checks)
+                        #timer_context_menu(cursor=cursor, conn=conn, checks=checks)
+                    case "5": # Return
                         pass
     
     elif table == "subtasks":
@@ -746,6 +764,85 @@ def context_menu(cursor, conn, checks, table):
                     edit_entry(cursor=cursor, conn=conn, table=table, id_list=checks)   
                 case "4": # Return
                     pass
+
+def popup_timer(cursor, conn, checks):
+    """
+    Creates Timer and Timewindow objects, which results in a pop-up timer. 
+    """
+    # Fetch global timer_list variable
+    global timer_list
+    # Exit function if no selection made
+    if not checks or len(checks) != 1:
+        return
+    # Get the task_name
+    task_id = checks[0]
+    cursor.execute(f"SELECT name FROM tasks WHERE id = {task_id}")
+    row = cursor.fetchone()
+    task_name = row[0] if row else f"Task {task_id}"
+    
+    # Create Timer object
+    task_timer = Timer(task_name=task_name, task_id=task_id)
+    # Create Timer Window
+    popup_timer = TimerWindow(task_timer=task_timer, cursor=cursor, conn=conn)
+
+def timer_context_menu(cursor, conn, checks):
+    """
+    Context menu to start or stop a timer for the selected task.
+    Requires exactly one task to be selected.
+    """
+    # Fetch global timer_list variable
+    global timer_list
+    # Exit function if no selection made
+    if not checks or len(checks) != 1:
+        return
+    # Get the task_name
+    task_id = checks[0]
+    cursor.execute(f"SELECT name FROM tasks WHERE id = {task_id}")
+    row = cursor.fetchone()
+    task_name = row[0] if row else f"Task {task_id}"
+    # Create menu options
+    choices = [Choice(value="0", name="Start timer"), Choice(value="1", name="Stop timer"), Choice(value="2", name="Return")]
+    choices.insert(0, Separator())
+    choice = inquirer.select(message="Timer", choices=choices).execute()
+    if choice is None:
+        return
+
+    match choice:
+        case "0":  # Start timer
+            # Create Timer object only if there is none other yet.
+            if len(timer_list)==0:
+                task_timer = Timer(task_name=task_name, task_id=task_id)
+                # Start timer
+                task_timer.start_timer()
+                # Append to list
+                timer_list.append(task_timer)
+            else:
+                print("A timer is already running! Please stop that one first.")
+            
+        case "1":  # Stop timer
+            # Stop the timer
+            timer_list[0].stop_timer()
+            # Update database
+            update_time_spent(cursor=cursor, conn=conn, table="tasks", timer_object=timer_list[0])
+            # Delete the timer from the list
+            del timer_list[0]
+                
+        case "2":  # Return
+            pass
+        
+def update_time_spent(cursor, conn, table, timer_object):
+    """Add elapsed_time (seconds) to the task's time_spent. Uses parameterized queries."""
+    # Get timer attributes
+    task_id = timer_object.task_id
+    elapsed_time = timer_object.elapsed_time
+    # Get the time already spent on the given task
+    cursor.execute(f"SELECT time_spent FROM tasks WHERE id = {task_id}")
+    row = cursor.fetchone()
+    prev_time = row[0] if row is not None and row[0] is not None else 0
+    # Calculate new amount of time spent and update database
+    new_time = prev_time + int(elapsed_time)
+    cursor.execute("UPDATE tasks SET time_spent = ? WHERE id = ?", (new_time, task_id))
+    conn.commit()
 
 
 def show_project_tasks(cursor, conn, check):
