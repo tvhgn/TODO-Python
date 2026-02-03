@@ -1,10 +1,17 @@
-from sqlite_python import *
-from ai_assistance import *
-
 import os
 from datetime import datetime, timedelta
 
 from InquirerPy import inquirer
+from InquirerPy.base import Choice
+
+from ai_assistance import *
+from db.users import *
+from db.tasks import *
+from db.projects import *
+from db.timers import *
+from db.display import *
+from db.context_menu import *
+from db.shop import *
 
 def show_menu(conn):
     # Create cursor
