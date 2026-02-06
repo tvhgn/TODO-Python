@@ -2,12 +2,17 @@ import json
 import os
 
 def generate_settings_file():
+    # Ask for desired location of backup folder
+    backup_directory = input("Enter the desired location of backup folder: ")
+    
     # Initialize settings file
     settings = {
         "active_user_id": 1, 
         "reward_mapping": {"0": 5, "1": 10, "2": 30},
-        "cost_mapping": {"0": 40, "1":80, "2":160}# {reward_value: coin_amount}
+        "cost_mapping": {"0": 40, "1":80, "2":160}, # {reward_value: coin_amount}
+        "backup_directory": backup_directory
     }
+    
     
     # Set details of settings file which we are gonna generate
     settings_path = os.path.join("data", "settings", "settings.json")
