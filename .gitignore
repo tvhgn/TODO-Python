@@ -167,3 +167,9 @@ cython_debug/
 modules/main_module/test.ipynb
 data/settings/settings.json
 modules/main_module/sqlite_python copy.py
+modules/db/MODULE_MAP.md
+modules/db/STRUCTURE_DIAGRAM.txt
+modules/db/docs/MODULE_MAP.md
+modules/db/docs/STRUCTURE_DIAGRAM.txt
+modules/docs/REFACTORING_SUMMARY.md
+modules/docs/REORGANIZATION_COMPLETE.md
