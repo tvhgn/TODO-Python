@@ -16,23 +16,22 @@ from db.display import *
 from db.context_menu import *
 from db.shop import *
 
-# Configure logging for gui module if needed, or rely on main.py's configuration
-# If you want separate log files or formats for GUI, configure here.
-# For now, we'll assume it uses the app.log configured in main.py
 
 def show_log_gui(conn):
     """Displays the contents of the application log file."""
     os.system("clear")
+    # path to log file
+    log_path = os.path.join("data", "logs", "todo-man.log")
     print("--- Application Log ---")
     try:
-        with open("app.log", "r") as f:
+        with open(log_path, "r") as f:
             log_content = f.read()
             if not log_content:
                 print("Log file is empty.")
             else:
                 print(log_content)
     except FileNotFoundError:
-        print("Log file 'app.log' not found.")
+        print("Log file 'todo-man.log' not found.")
     except Exception as e:
         print(f"An error occurred while reading the log file: {e}")
 
@@ -54,7 +53,6 @@ def show_menu(conn):
         coins = get_coin_amount(cursor)
         
         # Create a backup of the database
-        #dest_filename = "todos" + datetime.now().strftime("%Y_%m_%d_") + ".db"
         try:
             create_backup(src_file_name="todos.db",
                           src_dir=os.path.join("data", "database"),
@@ -206,5 +204,3 @@ def show_menu(conn):
                 logging.warning(f"Unrecognized menu selection: {main_select}") # Log unrecognized input
                 raise RuntimeError("Command not yet specified!")
 
-# Note: In gui.py, we're relying on the logging configuration from main.py.
-# If gui.py were to be run as a standalone script, it would need its own logging configuration.

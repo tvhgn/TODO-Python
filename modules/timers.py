@@ -41,14 +41,15 @@ class Timer:
             #print(f"\r{self.task_name} - elapsed: {self.formatted_time}", end="", flush=True)
             time.sleep(1)
         
-        # Store elapsed time so stop_timer can return it (threads don't pass return values back)
-        self.elapsed_time = time.time() - self.start_time
-        self.formatted_time = self._format_time(self.elapsed_time)
-        
     def start_timer(self):
         """Start a background timer"""
-        # start thread
-        self.timer_thread.start()
+        # start thread if not already running
+        if self.timer_thread.is_alive():
+            print("Timer is already running!")
+        else:
+            self.stop_flag.clear() # Reset flag just to be sure
+            self.timer_thread.start() # Start thread
+        
         
     def stop_timer(self):
         """Stops the background timer. Checks if thread is running and acts accordingly."""
@@ -65,7 +66,8 @@ class TimerWindow:
         self.conn = conn
         self.root = Tk()
         self.dimensions = "400x100"
-        # Create window
+        
+        # Create window and set attributes
         self.root.geometry(self.dimensions) # Set dimensions
         self.root.title(f"Timer: {task_timer.task_name}") #Add title
         # Create custom font
@@ -92,7 +94,7 @@ class TimerWindow:
         # Update label initially
         self.update_label()
         
-        # Execute tkinter window
+        # Execute tkinter window 
         self.root.mainloop()
         
     def start_timer(self):
@@ -119,6 +121,7 @@ class TimerWindow:
             self.task_timer.stop_timer()
         # Close the window
         self.root.destroy()
+    
     
     def update_db(self):
         """Add elapsed_time (seconds) to the task's time_spent. Uses parameterized queries."""

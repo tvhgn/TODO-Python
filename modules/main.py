@@ -9,7 +9,8 @@ from gui import *
 from helpers.settings import generate_settings_file
 
 # Configure logging
-logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging_path = os.path.join("data", "logs", "todo-man.log")
+logging.basicConfig(filename=logging_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 if __name__ == "__main__":
 
