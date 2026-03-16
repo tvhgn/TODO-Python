@@ -2,6 +2,8 @@
 Data retrieval and display functions.
 """
 from datetime import datetime, timedelta
+import sqlite3
+
 from prettytable import PrettyTable
 from InquirerPy import inquirer
 from InquirerPy.base import Choice
@@ -50,6 +52,40 @@ def list_entries(cursor, table, condition: str = "NULL", get_entries: bool = Fal
         return (table_obj, results)
     # Otherwise just give the number.
     return total_rows
+
+def get_table(db_file, table, condition:str = "NULL", alt_query:str = None):
+    """
+    Returns a table retrieved from SQL database, optionally filtered by a condition.
+    
+    Args:
+        cursor (sqlite3.Cursor): The database cursor.
+        table (str): Table name.
+        condition (str): Optional filter.
+        alt_query (str): Optional full SQL query to override default behavior.
+        
+    Returns:
+        tuple: Table with results from SQL query (list), and headers (list).
+    """
+    if alt_query is None:
+        # Define query depending on condition presence
+        if condition != "NULL":
+            query = f"SELECT * FROM {table} WHERE {condition};"
+        else:
+            query = f"""SELECT * FROM {table};"""
+    else:
+        query = alt_query
+        
+    with sqlite3.connect(db_file) as conn:
+        cursor = conn.cursor()
+        # Execute query
+        cursor.execute(query)
+        # Fetch results
+        results = cursor.fetchall()
+        results = [list(row) for row in results]
+        # Get headers
+        headers = [col[0] for col in cursor.description]
+    
+    return (results, headers)
 
 
 def display_and_select(cursor, table, condition: str = "NULL", alt_query: str = None):    

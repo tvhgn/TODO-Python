@@ -5,6 +5,7 @@ from datetime import datetime
 from InquirerPy import inquirer
 
 from db.database import determine_id
+from db.display import list_entries
 from helpers.settings import read_settings_file
 
 
@@ -16,7 +17,7 @@ def add_task(cursor, conn):
         cursor (sqlite3.Cursor): The database cursor.
         conn (sqlite3.Connection): The database connection.
     """
-    from db.display import list_entries
+    
     
     # Initialize values
     task_name = ""
@@ -122,3 +123,4 @@ def get_reward_value(cursor, id_num):
     cursor.execute(query)
     reward_value = cursor.fetchone()[0]
     return reward_value
+

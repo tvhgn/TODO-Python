@@ -5,7 +5,7 @@ import logging
 from db.database import *
 from db.users import *
 from db.projects import *
-from gui import *
+from gui.menus import ToDoApp
 from helpers.settings import generate_settings_file
 
 # Configure logging
@@ -74,12 +74,14 @@ if __name__ == "__main__":
 
     # Start DB connection and application
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            logging.info("Application CLI is starting.") # Log GUI start
-            # Open GUI
-            show_menu(conn)
+        # Logging for TUI start
+        logging.info("Application started. The main menu is starting.") # Log TUI start
+        # Open main menu
+        main_app = ToDoApp()
+        main_app.run()
+        
     except Exception as e:
-        logging.error(f"An error occurred when starting the CLI: {e}")
-        print(f"An error occurred when starting the CLI: {e}")
+        logging.error(f"An error occurred when starting the TUI: {e}")
+        print(f"An error occurred when starting the TUI: {e}")
 
     logging.info("Application finished.") # Log application exit

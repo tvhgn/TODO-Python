@@ -61,7 +61,6 @@ def add_project(cursor, conn, initialize=False):
     # Print message
     print(f"Project '{project_name}' has been created!")
 
-
 def show_project_tasks(cursor, conn, check):
     """
     Displays all tasks associated with a specific project.

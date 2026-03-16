@@ -1,0 +1,22 @@
+Screen {
+    align: center middle;
+    layers: below above;
+}
+
+DataTable {
+    layer: below;
+}
+
+Input {
+    display: none;
+}
+
+OptionList {
+    display: none;
+}
+
+.prompted {
+    display:block;
+    layer: above;
+    width: 60%;
+}

@@ -1,0 +1,26 @@
+Screen {
+    align: center middle;
+}
+
+Vertical {
+    align: center middle;
+    width: 40;
+}
+
+ListView {
+    width: 30;
+    height: auto;
+    margin: 2;
+}
+
+/* Static {
+    width: 100%;
+    text-align: center;
+} */
+
+
+Label {
+    /* text-align: center; */
+    padding: 1 2;
+    width: 100%;
+}
