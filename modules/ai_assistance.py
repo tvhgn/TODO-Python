@@ -7,9 +7,7 @@ from textual.widgets import Label, Footer, Static, Button
 from datetime import datetime
 import os
 
-from sqlite_python import get_today, list_entries
-from helpers.prompts import continue_and_clear
-# from gui.helper_apps import TextDisplayer
+from db.display import get_today, list_entries
 
 
 class AIResponse(Static):

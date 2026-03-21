@@ -53,6 +53,30 @@ def list_entries(cursor, table, condition: str = "NULL", get_entries: bool = Fal
     # Otherwise just give the number.
     return total_rows
 
+def get_entry(db_file:str, table:str, id_num:int) ->tuple:
+    """
+    Get entry from the remote database.
+
+    Args:
+        db_file (str): path to database file
+        table (str): table name you want to get the entry from
+        id (int): The id of the entry that you want to return.
+
+    Returns:
+        tuple: returns the resulting values with the respective headers (result, headers) for the given id.
+    """
+    query = f"SELECT * FROM {table} WHERE id={id_num};"
+    with sqlite3.connect(db_file) as conn:
+        cursor = conn.cursor()
+        # Execute query
+        cursor.execute(query)
+        # Fetch results
+        result = cursor.fetchone()
+        # Get headers
+        headers = [col[0] for col in cursor.description]
+    
+    return (result, headers)
+
 def get_table(db_file, table, condition:str = "NULL", alt_query:str = None):
     """
     Returns a table retrieved from SQL database, optionally filtered by a condition.
@@ -170,32 +194,32 @@ def display_and_select(cursor, table, condition: str = "NULL", alt_query: str = 
     return checks
 
 
-def get_entry(cursor, table, id_num=None, col=None):
-    """
-    Fetches a specific row or column value from a table by ID.
+# def get_entry(cursor, table, id_num=None, col=None):
+#     """
+#     Fetches a specific row or column value from a table by ID.
     
-    Args:
-        cursor (sqlite3.Cursor): The database cursor.
-        table (str): Table name.
-        id_num (int/str): The ID of the record.
-        col (str): Specific column name to fetch.
+#     Args:
+#         cursor (sqlite3.Cursor): The database cursor.
+#         table (str): Table name.
+#         id_num (int/str): The ID of the record.
+#         col (str): Specific column name to fetch.
         
-    Returns:
-        tuple or Any: The fetched row or value.
-    """
-    # Cast id number to integer
-    id_num = int(id_num)
+#     Returns:
+#         tuple or Any: The fetched row or value.
+#     """
+#     # Cast id number to integer
+#     id_num = int(id_num)
         
-    # Define query
-    if col is None: # When no specific column has been specified
-        query = f"""SELECT * FROM {table} WHERE id = {id_num}"""
-    else:
-        query = f"""SELECT {col} FROM {table} WHERE id = {id_num}"""
-    # Execute statement
-    cursor.execute(query)
-    # Fetch results
-    result = cursor.fetchone()
-    return result
+#     # Define query
+#     if col is None: # When no specific column has been specified
+#         query = f"""SELECT * FROM {table} WHERE id = {id_num}"""
+#     else:
+#         query = f"""SELECT {col} FROM {table} WHERE id = {id_num}"""
+#     # Execute statement
+#     cursor.execute(query)
+#     # Fetch results
+#     result = cursor.fetchone()
+#     return result
 
 
 def get_today(cursor):

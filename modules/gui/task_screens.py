@@ -7,6 +7,7 @@ from textual.widgets import DataTable, Footer, Input, Static, OptionList
 from textual.app import Screen, ComposeResult
 
 from db.display import get_table
+from db.objects import Task
 from db.database import determine_id
 from db.transformations import get_project_id, get_project_name, transform_value
 
@@ -14,7 +15,8 @@ class TaskScreen(Screen):
     BINDINGS = [("r", "app.pop_screen", "Return"),
                 ("escape", "exit_input", "Exit Input"),
                 ("c", "complete_task", "Complete Selected Task"),
-                ("a", "add_task","Add Task")]
+                ("a", "add_task","Add Task"),
+                ("d", "delete_task", "Delete Task")]
     CSS_PATH = os.path.join("css_files", "task_screen.css")
     # Reverse flag
     reverse_flag = False
@@ -56,9 +58,10 @@ class TaskScreen(Screen):
         
         yield Footer()
         
-        
-        
-    def on_mount(self) -> None:
+    def get_data(self) -> None:
+        """
+        Retrieves data from the remote database and formats it to make it more readable.
+        """
         # get table
         self.results, self.headers = get_table(self.DB_FILE, "tasks", self.condition)
         # Transform values
@@ -74,8 +77,12 @@ class TaskScreen(Screen):
             # priority
             self.results[i][priority_idx] = transform_value(self.DB_FILE, result[priority_idx], category="priority")
             # status
-            self.results[i][status_idx] = transform_value(self.DB_FILE, result[status_idx], category="status")
-            
+            self.results[i][status_idx] = transform_value(self.DB_FILE, result[status_idx], category="status")    
+        
+    def on_mount(self) -> None:
+        # Get data from the remote database formatted for readability.
+        self.get_data()
+                    
         # Add columns and rows to the textual table widget
         table = self.query_one(DataTable)
         table.add_columns(*self.headers)
@@ -109,7 +116,7 @@ class TaskScreen(Screen):
             if "prompted" not in input_widget.classes:
                 input_widget.add_class("prompted")
                 input_widget.focus()
-        # Get cell info
+        # store current coordinate
         self.current_coordinate = event.coordinate
         
         
@@ -210,59 +217,37 @@ class TaskScreen(Screen):
         
         # Update the datatable
         coordinate_to_update = (highlighted_task_row, self.headers.index("status")) # Get coordinate of status column and highlighted row
-        datatable.update_cell_at(coordinate_to_update, 2) # finish the task
+        datatable.update_cell_at(coordinate_to_update, "done") # finish the task
         
         # Reflect the changes to the db
         self.update_db_at_cell(coordinate_to_update, 2)
         
     def action_add_task(self) -> None:
         """Adds new entry to datatable which user needs to fill in using the input widget"""
-        datatable = self.query_one(DataTable)
-        num_cols = len(self.headers)
-        new_row = ["" for _ in range(num_cols)]
-        # Pre-fill some columns (id, begin_date, time_spent = 0 ...)
-        # In order to get the new id number we need to establish a connection first
-        with sqlite3.connect(self.DB_FILE) as conn:
-            cursor = conn.cursor()
-            # Determine new id
-            new_id = determine_id(cursor=cursor, table_name="tasks")
-            today = datetime.today()
-            today = today.strftime('%Y-%m-%d')
-            datatable.add_row(new_row)
-            # Pre-fill values
-            new_row[self.headers.index("id")] = new_id
-            new_row[self.headers.index("name")] = "new task"
-            new_row[self.headers.index("begin_date")] = today
-            new_row[self.headers.index("end_date")] = today
-            new_row[self.headers.index("reward")] = 0 # small reward
-            new_row[self.headers.index("time_spent")] = 0
-            new_row[self.headers.index("status")] = 0 # not started
-            new_row[self.headers.index("priority")] = 0 # no priority
-            new_row[self.headers.index("project_id")] = 1 # Default is inbox
-            # Add to DB
-            cursor.execute(f"""INSERT INTO tasks(id, name, begin_date, end_date, reward, time_spent, status, priority, project_id) VALUES(?,?,?,?,?,?,?,?,?);""",
-                           (new_row[self.headers.index("id")], new_row[self.headers.index("name")], 
-                            new_row[self.headers.index("begin_date")], new_row[self.headers.index("end_date")],
-                            new_row[self.headers.index("reward")],
-                            new_row[self.headers.index("time_spent")], new_row[self.headers.index("status")], 
-                            new_row[self.headers.index("priority")], new_row[self.headers.index("project_id")]))
-            # Commit changes
-            conn.commit()   
+        # get table from database to make sure latest changes are included
+        # self.results, self.headers = get_table(self.DB_FILE, "tasks", self.condition)
+        self.get_data()
+        
+        # Create task object
+        new_task = Task()
+        new_row = new_task.data_recoded # Returns dictionary containing task information.
+        new_row = [new_row[k] for k in self.headers] # transform to list of values using the order from self.headers
+        self.results.insert(0, new_row) # insert empty entry on the top
+        
         # Rebuild datatable with empty task at the top
         datatable = self.query_one(DataTable)  
         datatable.clear()
-        # get table from database to make sure latest changes are included
-        self.results, self.headers = get_table(self.DB_FILE, "tasks", self.condition)
-        self.results.insert(0, new_row) # insert empty entry on the top
+        
         # Add columns and rows to the textual table widget
-        datatable.add_columns(*self.headers)
+        # datatable.add_columns(*self.headers)
         datatable.add_rows(self.results)  
         # Set highlighted cell to name column of new task
         datatable.move_cursor(row=0, column=self.headers.index("name"))
         # Set coordinate to name column of new task
         self.current_coordinate = Coordinate(row=0, column=self.headers.index("name"))
         
-       
+        # add the new task to the database
+        new_task.add_task_to_db()
         
         # Show input widget for user to fill in task information.
         input_widget = self.query_one(Input)
@@ -271,7 +256,29 @@ class TaskScreen(Screen):
         
         
     def action_delete_task(self) -> None:
-        pass
+        """
+        Deletes the highlighted cell after confirmation.
+        """
+        # Get the coordinate of the highlighted cell
+        datatable = self.query_one(DataTable)
+        row_idx = datatable.cursor_row
+        # Get the task id
+        id_idx = self.headers.index("id")
+        task_id = self.results[row_idx][id_idx]
+        # show confirmation screen
+        
+        # Delete the task from the datatable
+        with sqlite3.connect(self.DB_FILE) as conn:
+            cursor = conn.cursor()
+            query = f"DELETE FROM tasks WHERE id={task_id}"
+            cursor.execute(query)
+            conn.commit()
+        # Rebuild the datatable
+        self.get_data() # Retrieve up-to-date data
+        datatable.clear()
+        datatable.add_columns(*self.headers)
+        datatable.add_rows(self.results) 
+        
         
     
     def update_db_at_cell(self, coordinate: tuple[int, int], new_value: str) -> None:
@@ -288,21 +295,13 @@ class TaskScreen(Screen):
         # Figure out the header and row id corresponding to the coordinate
         data_row, data_column = coordinate
         header = self.headers[data_column]
-        id_idx = self.headers.index("id") # index of id column. Should be at 0, but just in case check where it is.
-        row_id = self.results[data_row][id_idx]
+        # Create task object from task id
+        id_idx = self.headers.index("id")
+        task_id = self.results[data_row][id_idx]
+        selected_task = Task(task_id=task_id)
+        # Update database and task object
+        selected_task.update_db(header=header, new_value=new_value)
         
-        # Open the sqlite3 connection, execute the query, and commit changes to the database.
-        with sqlite3.connect(self.DB_FILE) as conn:
-            # create cursor
-            cursor = conn.cursor()
-            # Define the query
-            if "name" in header or "date" in header:
-                new_value = f"'{new_value}'"
-            query = f"""UPDATE tasks SET {header} = {new_value} WHERE id = {row_id};"""
-            # Execute query
-            cursor.execute(query)
-            # Commit changes
-            conn.commit()
             
     def check_subtasks(self):
         pass
